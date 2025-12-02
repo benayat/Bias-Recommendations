@@ -25,4 +25,4 @@ htmlcov/
 *.tmp
 *.swp
 *~
-.DS_Store
+.DS_Storeuv.lock
