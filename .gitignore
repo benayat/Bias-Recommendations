@@ -1,0 +1,28 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# Virtual environments
+.venv/
+
+# IDE files
+.idea/
+
+# Data files
+# Often, data files are not versioned, especially generated ones.
+/data/analyzed_responses.csv
+
+# General
+*.log
+*.tmp
+*.swp
+*~
+.DS_Store
