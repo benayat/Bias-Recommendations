@@ -22,8 +22,7 @@ from datasets import load_dataset
 
 # Your interface
 from llm import LLMClient, SamplingConfig
-from constants import HOME_CONFIG_SMALL, HOME_CONFIG
-
+from constants import HOME_CONFIG_SMALL, HOME_CONFIG, HPC_2H200_CONFIG
 
 # -----------------------------
 # System prompt: always JSON out
@@ -181,7 +180,7 @@ def main() -> None:
 
     # LLM
     ap.add_argument("--model", default="Qwen/Qwen3-235B-A22B-Instruct-2507-FP8")
-    ap.add_argument("--chunk-size", type=int, default=50_000)
+    ap.add_argument("--chunk-size", type=int, default=700000)
     ap.add_argument("--max-out-tokens", type=int, default=220)
 
     # Output
@@ -199,7 +198,8 @@ def main() -> None:
 
     ds = load_dataset(args.dataset, split=args.split, streaming=args.stream)
 
-    llm = LLMClient(model_name=args.model, config=HOME_CONFIG)
+    llm = LLMClient(model_name=args.model, config=HPC_2H200_CONFIG)
+    # llm = LLMClient(model_name=args.model, config=HOME_CONFIG)
     sampling = SamplingConfig(
         temperature=0.0,
         top_p=1.0,
