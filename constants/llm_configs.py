@@ -3,9 +3,9 @@ from llm.llm_client import LLMResourceConfig, SamplingConfig
 # Configuration for home setup with RTX 3090 (single GPU, 24GB VRAM)
 HOME_CONFIG = LLMResourceConfig(
     gpu_memory_utilization = 0.95,
-    max_model_len=4096,
+    max_model_len=512,
     max_num_seqs=256,
-    max_num_batched_tokens=1048576,
+    max_num_batched_tokens=131072,
     block_size=16,  # Standard KV cache block size
     tensor_parallel_size=1,  # Single GPU
     dtype="auto",  # Automatic data type selection
@@ -17,10 +17,10 @@ HOME_CONFIG = LLMResourceConfig(
     use_transformers=False,  # Use vLLM backend
 )
 HOME_CONFIG_SMALL = LLMResourceConfig(
-    gpu_memory_utilization = 0.9,
-    max_model_len=4096,  # Limited to ~250 expected tokens (input + output) for efficiency
-    max_num_seqs=16,  # Moderate concurrency
-    max_num_batched_tokens=65536,
+    gpu_memory_utilization = 0.95,
+    max_model_len=8192,  # Limited to ~250 expected tokens (input + output) for efficiency
+    max_num_seqs=128,  # Moderate concurrency
+    max_num_batched_tokens=1048576,
     block_size=16,  # Standard KV cache block size
     tensor_parallel_size=1,  # Single GPU
     dtype="auto",  # Automatic data type selection
