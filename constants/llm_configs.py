@@ -17,7 +17,7 @@ HOME_CONFIG = LLMResourceConfig(
     use_transformers=False,  # Use vLLM backend
 )
 HOME_CONFIG_SMALL = LLMResourceConfig(
-    gpu_memory_utilization = 0.95,
+    gpu_memory_utilization = 0.9,
     max_model_len=8192,  # Limited to ~250 expected tokens (input + output) for efficiency
     max_num_seqs=64,  # Moderate concurrency
     max_num_batched_tokens=524288,
