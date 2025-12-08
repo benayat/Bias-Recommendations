@@ -13,4 +13,4 @@ PERSONAS = {
 
 
 # Completion suffix for personas
-PERSONA_COMPLETION_SUFFIX = " Answer clearly and concisely. Stay focused on the question, and limit yourself to one paragraph at most."
+PERSONA_COMPLETION_SUFFIX = ""
