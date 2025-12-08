@@ -87,7 +87,7 @@ def main():
     else:
         cfg = LLMResourceConfig(**base_cfg.__dict__) if not isinstance(base_cfg, LLMResourceConfig) else base_cfg
 
-    cfg.max_model_len = 4096  # longer responses
+    # cfg.max_model_len = 4096  # longer responses
     llm = LLMClient(model_name=model_id, config=cfg)
 
     results = []
