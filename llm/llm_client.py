@@ -25,7 +25,6 @@ class LLMResourceConfig:
     enforce_eager: bool = False
     use_transformers: bool = False
     enable_chunked_prefill: bool = False
-
     # attention_backend: Optional[str] = "flashinfer"
 
     def scale_for_model_size(self, model_size_b: float):
@@ -56,6 +55,7 @@ class LLMResourceConfig:
             "enforce_eager": self.enforce_eager,
             "model_impl": "transformers" if self.use_transformers else "vllm",
             # "attention_backend": self.attention_backend,
+            "enable_chunked_prefill": self.enable_chunked_prefill,
         }
 
 
