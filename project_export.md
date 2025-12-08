@@ -605,16 +605,18 @@ class LLMClient:
 ```
 
 ## main.py
+
 ```python
 import re
 import pandas as pd
 
-from constants import MODELS_LIST, QUESTIONS, HOME_CONFIG
+from constants import SMALL_MODELS_LIST, QUESTIONS, HOME_CONFIG
 from llm import LLMClient, SamplingConfig, LLMResourceConfig
+
 
 def main():
     data = []
-    for model in MODELS_LIST:
+    for model in SMALL_MODELS_LIST:
         print(f"Processing model: {model}")
         # Extract model size
         model_size_match = re.search(r'(\d+(?:\.\d+)?)[Bb]', model)
@@ -648,7 +650,7 @@ def main():
                 messages = [
                     {"role": "user", "content": question}
                 ]
-                prompt = {"messages": messages, "metadata": {"qid": qid, "variant": f"paraphrase_{i+1}"}}
+                prompt = {"messages": messages, "metadata": {"qid": qid, "variant": f"paraphrase_{i + 1}"}}
                 prompts.append(prompt)
 
         results = llm.run_batch(prompts, sampling_params, output_field='response')
@@ -664,6 +666,7 @@ def main():
 
     df = pd.DataFrame(data)
     df.to_csv('data/responses.csv', index=False)
+
 
 if __name__ == '__main__':
     main()
