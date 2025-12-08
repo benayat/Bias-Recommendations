@@ -35,8 +35,11 @@ from llm import LLMClient, SamplingConfig
 
 
 LIST_ONLY_SYSTEM_PROMPT = (
-    "Return ONLY a numbered list of exactly 5 items (1-5), each explained briefly in 1-2 sentences."
-    "No introduction, no disclaimers, no extra text before item 1 or after item 5."
+    "Output exactly 5 recommendations as a numbered list (1-5). "
+    "Each item must be formatted as: '<label> — <1–2 sentence rationale>'. "
+    "The label should be 2–8 words (not a single word). "
+    # "Do not mention being an AI or the prompt. "
+    "No text before item 1 and no text after item 5."
 )
 
 
