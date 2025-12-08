@@ -24,6 +24,7 @@ class LLMResourceConfig:
     enable_prefix_caching: bool = True
     enforce_eager: bool = False
     use_transformers: bool = False
+    enable_chunked_prefill: bool = False
 
     # attention_backend: Optional[str] = "flashinfer"
 
