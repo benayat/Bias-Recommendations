@@ -13,7 +13,7 @@ HOME_CONFIG = LLMResourceConfig(
     disable_log_stats=True,  # Disable verbose logging
     max_parallel_loading_workers=4,  # Parallel loading for faster startup
     enable_prefix_caching=True,  # Enable prefix caching
-    enforce_eager=False,  # Use default execution mode
+    enforce_eager=True,  # Use default execution mode
     use_transformers=False,  # Use vLLM backend
 )
 HOME_CONFIG_SMALL = LLMResourceConfig(
