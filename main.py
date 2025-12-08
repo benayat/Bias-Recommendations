@@ -4,7 +4,7 @@ from pathlib import Path
 import argparse
 import json
 
-from constants import HOME_CONFIG, QUESTIONS, QID_ORDER
+from constants import HOME_CONFIG, QUESTIONS, QID_ORDER, HOME_CONFIG_SMALL_RECOMMENDATIONS
 from llm import LLMClient, SamplingConfig, LLMResourceConfig
 
 
@@ -77,10 +77,8 @@ def main():
     model_size_b = float(model_size_match.group(1)) if model_size_match else None
 
     # Copy HOME_CONFIG robustly
-    try:
-        base_cfg = copy.deepcopy(HOME_CONFIG)
-    except Exception:
-        base_cfg = LLMResourceConfig(**HOME_CONFIG.__dict__)  # fallback
+    base_cfg = copy.deepcopy(HOME_CONFIG_SMALL_RECOMMENDATIONS)
+
 
     if model_size_b is not None:
         print(f"Model size: {model_size_b}B")
