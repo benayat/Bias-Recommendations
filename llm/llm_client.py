@@ -62,8 +62,9 @@ class LLMResourceConfig:
 class SamplingConfig:
     temperature: float = 0.0
     top_p: float = 1.0
-    max_tokens: int = 2
-    # batch_size: int = 100
+    max_tokens: int = 256
+    n: int = 1
+    seed: int = 12345
 
 
 class LLMClient:
@@ -173,6 +174,8 @@ class LLMClient:
             temperature=sampling_params.temperature,
             top_p=sampling_params.top_p,
             max_tokens=sampling_params.max_tokens,
+            n=sampling_params.n,
+            seed=sampling_params.seed,
         )
         try:
             # Default / fast path: pre-tokenize to token IDs and feed directly

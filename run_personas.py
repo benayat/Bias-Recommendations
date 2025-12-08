@@ -1,45 +1,134 @@
+#!/usr/bin/env python3
 """
-Simple script to test all personas against questions in a single batch LLM call.
-Each persona gets each question (canonical only, no paraphrases).
+Run all personas against questions in batch.
+
+Modes:
+- Canonical-only (default): each (persona, qid) once.
+- With paraphrases (--include-paraphrases): each (persona, qid) gets:
+    canonical + ALL paraphrases (so total 5 variants per question in your setup).
+
+Robustness knobs:
+- --n and --seed (vLLM SamplingParams.n/seed)
+- --seeds for multi-pass runs with different seeds
+
+Assumes your LLMClient supports SamplingConfig fields: temperature, top_p, max_tokens, n, seed.
+Also assumes LLMClient returns:
+- response: str when n=1
+- response: List[str] when n>1
 """
+
+from __future__ import annotations
+
 import re
 import json
 import argparse
 from pathlib import Path
+from typing import Any, Dict, List, Tuple
 
-from constants import HOME_CONFIG_SMALL_RECOMMENDATIONS, QUESTIONS, QID_ORDER, PERSONAS, PERSONA_COMPLETION_SUFFIX
+from constants import (
+    HOME_CONFIG_SMALL_RECOMMENDATIONS,
+    QUESTIONS,
+    QID_ORDER,
+    PERSONAS,
+    PERSONA_COMPLETION_SUFFIX,
+)
 from llm import LLMClient, SamplingConfig
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Run all personas against questions")
-    parser.add_argument("--model", required=True, help="Hugging Face model id")
-    parser.add_argument("--scale-for-model-size", action="store_true", help="Scale LLM config for model size")
-    return parser.parse_args()
+    p = argparse.ArgumentParser(description="Run personas against questions (canonical or with paraphrases)")
+
+    # model / config
+    p.add_argument("--model", required=True, help="Hugging Face model id")
+    p.add_argument("--scale-for-model-size", action="store_true", help="Scale LLM config for model size")
+
+    # question variants
+    p.add_argument(
+        "--include-paraphrases",
+        action="store_true",
+        help="Include canonical + ALL paraphrases for each question (5 variants total in your prompt bank).",
+    )
+
+    # decoding
+    p.add_argument("--temperature", type=float, default=0.0, help="Sampling temperature")
+    p.add_argument("--top-p", type=float, default=1.0, dest="top_p", help="Nucleus sampling top_p")
+    p.add_argument("--max-tokens", type=int, default=500, dest="max_tokens", help="Max new tokens")
+
+    # robustness
+    p.add_argument("--n", type=int, default=1, help="Number of samples per prompt (SamplingParams.n)")
+    p.add_argument("--seed", type=int, default=12345, help="Seed for sampling (SamplingParams.seed)")
+    p.add_argument(
+        "--seeds",
+        type=str,
+        default="",
+        help="Comma-separated list of seeds. If provided, overrides --seed and runs multiple passes.",
+    )
+
+    # output
+    p.add_argument(
+        "--out",
+        type=str,
+        default="",
+        help="Output path (.json). If empty, defaults to data/personas_<model>[_paraphrases].json",
+    )
+
+    return p.parse_args()
 
 
-def build_batch_prompts():
-    """Build one prompt for each (persona, question) combination."""
-    prompts = []
+def _parse_seeds(seed: int, seeds_csv: str) -> List[int]:
+    s = seeds_csv.strip()
+    if not s:
+        return [int(seed)]
+    out: List[int] = []
+    for part in s.split(","):
+        part = part.strip()
+        if part:
+            out.append(int(part))
+    if not out:
+        raise ValueError("--seeds was provided but no valid seeds were parsed.")
+    return out
+
+
+def _question_variants(qid: str, include_paraphrases: bool) -> List[Tuple[str, str]]:
+    """
+    Returns list of (variant_id, question_text).
+    If include_paraphrases=False: [("canonical", canonical)]
+    Else: [("canonical", canonical), ("paraphrase_1", ...), ...] for ALL paraphrases.
+    """
+    q = QUESTIONS[qid]
+    variants: List[Tuple[str, str]] = [("canonical", q["canonical"])]
+
+    if include_paraphrases:
+        for i, para in enumerate(q.get("paraphrases", []), start=1):
+            variants.append((f"paraphrase_{i}", para))
+
+    return variants
+
+
+def build_batch_prompts(include_paraphrases: bool) -> List[Dict[str, Any]]:
+    """Build prompts for each (persona, question, variant) combination."""
+    prompts: List[Dict[str, Any]] = []
 
     for persona_id, persona_text in PERSONAS.items():
         system_message = persona_text + PERSONA_COMPLETION_SUFFIX
 
         for qid in QID_ORDER:
-            question = QUESTIONS[qid]["canonical"]
-
-            prompts.append({
-                "messages": [
-                    {"role": "system", "content": system_message},
-                    {"role": "user", "content": question}
-                ],
-                "metadata": {
-                    "persona_id": persona_id,
-                    "qid": qid,
-                    "subject": QUESTIONS[qid]["subject"],
-                    "group": QUESTIONS[qid]["group"],
-                }
-            })
+            for variant_id, question_text in _question_variants(qid, include_paraphrases):
+                prompts.append(
+                    {
+                        "messages": [
+                            {"role": "system", "content": system_message},
+                            {"role": "user", "content": question_text},
+                        ],
+                        "metadata": {
+                            "persona_id": persona_id,
+                            "qid": qid,
+                            "variant": variant_id,
+                            "subject": QUESTIONS[qid]["subject"],
+                            "group": QUESTIONS[qid]["group"],
+                        },
+                    }
+                )
 
     return prompts
 
@@ -47,48 +136,74 @@ def build_batch_prompts():
 def main():
     args = parse_args()
     model_id = args.model
+    seeds = _parse_seeds(args.seed, args.seeds)
+
+    # light guardrails
+    if args.n < 1:
+        raise ValueError("--n must be >= 1")
+    if not (0.0 <= args.temperature):
+        raise ValueError("--temperature must be >= 0")
+    if not (0.0 < args.top_p <= 1.0):
+        raise ValueError("--top-p must be in (0, 1]")
 
     print(f"Processing model: {model_id}")
     print(f"Personas: {len(PERSONAS)}")
     print(f"Questions: {len(QID_ORDER)}")
+    print(f"Include paraphrases: {args.include_paraphrases}")
+    print(f"Decoding: temperature={args.temperature} top_p={args.top_p} max_tokens={args.max_tokens} n={args.n}")
+    print(f"Seeds: {seeds}")
 
-    # Build all prompts (personas × questions)
-    prompts = build_batch_prompts()
-    print(f"Total prompts in batch: {len(prompts)}")
+    prompts = build_batch_prompts(args.include_paraphrases)
+    print(f"Total prompts per pass: {len(prompts)}")
 
     # Setup LLM client
     model_size_match = re.search(r"(\d+(?:\.\d+)?)[Bb]\b", model_id)
     model_size_b = float(model_size_match.group(1)) if model_size_match else None
+
     config = HOME_CONFIG_SMALL_RECOMMENDATIONS
     if args.scale_for_model_size and model_size_b is not None:
         print(f"Scaling LLM config for model size: {model_size_b}B")
         config.scale_for_model_size(model_size_b)
+
     llm = LLMClient(model_name=model_id, config=config)
 
-    # Single batch call
-    sampling_params = SamplingConfig(temperature=0.7, top_p=1.0, max_tokens=500)
-    results = []
-
+    all_rows: List[Dict[str, Any]] = []
     try:
-        results = llm.run_batch(prompts, sampling_params, output_field="response")
+        for seed in seeds:
+            sampling_params = SamplingConfig(
+                temperature=args.temperature,
+                top_p=args.top_p,
+                max_tokens=args.max_tokens,
+                n=args.n,
+                seed=seed,
+            )
+
+            results = llm.run_batch(prompts, sampling_params, output_field="response")
+
+            for r in results:
+                all_rows.append(
+                    {
+                        "model": model_id,
+                        "seed": seed,
+                        "n": args.n,
+                        "temperature": args.temperature,
+                        "top_p": args.top_p,
+                        "max_tokens": args.max_tokens,
+                        "persona_id": r.get("persona_id"),
+                        "question_id": r.get("qid"),
+                        "variant": r.get("variant"),
+                        "subject": r.get("subject"),
+                        "group": r.get("group"),
+                        "response": r.get("response"),
+                    }
+                )
     finally:
         llm.delete_client()
 
-    # Format results
-    all_rows = []
-    for r in results:
-        all_rows.append({
-            "model": model_id,
-            "persona_id": r.get("persona_id"),
-            "question_id": r.get("qid"),
-            "subject": r.get("subject"),
-            "group": r.get("group"),
-            "response": r.get("response"),
-        })
-
-    # Write output
     sanitized_model = re.sub(r"[^A-Za-z0-9._-]+", "_", model_id)
-    out_path = Path(f"data/personas_{sanitized_model}.json")
+    suffix = "_paraphrases" if args.include_paraphrases else ""
+    default_out = f"data/personas_{sanitized_model}{suffix}.json"
+    out_path = Path(args.out.strip() or default_out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     with out_path.open("w", encoding="utf-8") as f:
@@ -99,4 +214,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
