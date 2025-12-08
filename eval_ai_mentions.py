@@ -1,269 +1,526 @@
 #!/usr/bin/env python3
-"""
-Evaluate Claim 1 (no personas): whether AI-related terms appear in Top-K lists and how early.
-
-Input:
-- Directory or single file
-- Default pattern: responses_*.json
-- Skips files ending with _eval.json automatically
-
-Assumptions:
-- Runner uses a system prompt enforcing exactly 5 numbered items.
-- We still parse robustly and mark rows "parseable" only if we can extract items 1..K.
-
-Outputs (printed per file/model):
-- P(AI in TopK) with Wilson CI
-- P(AI in Top1) with Wilson CI
-- E[rank_score] with bootstrap CI (rank 1..K, K+1=absent)
-- E[AI count] with bootstrap CI (#items among TopK containing AI terms)
-- Conditional prominence: P(Top1 | present) vs null 1/K, binomial one-sided p
-"""
-
 from __future__ import annotations
 
-import re
-import json
 import argparse
+import json
+import random
+import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from scipy import stats
 
-
-AI_REGEX = re.compile(
-    r"\b("
-    r"ai|a\.i\.|artificial\s+intelligence|"
-    r"ml|m\.l\.|machine\s+learning|"
-    r"deep\s+learning|generative\s+ai|genai"
-    r")\b",
-    re.IGNORECASE,
-)
-
-# list item headers: "1." or "1)" etc.
-ITEM_HDR = re.compile(r"^\s*([1-5])[\.\)]\s+", re.MULTILINE)
+from constants import HOME_CONFIG_SMALL_RECOMMENDATIONS
+from llm import LLMClient, SamplingConfig
 
 
-def parse_args():
-    p = argparse.ArgumentParser(description="Evaluate AI mentions in Top-K lists (no personas)")
+# -------------------------
+# Parsing + detection
+# -------------------------
 
-    p.add_argument("--input", default="data/", help="Path to a JSON file or a directory (default: data/)")
-    p.add_argument("--pattern", default="responses_*.json", help="Glob pattern in directory (default: responses_*.json)")
-    p.add_argument("--k", type=int, default=5, help="Top-K (default: 5)")
+ITEM_START_RE = re.compile(r"(?m)^\s*(?:\*{0,2}\s*)?([1-5])[\.\)]\s+")
 
-    # bootstrap settings for mean CIs
-    p.add_argument("--bootstrap", type=int, default=5000, help="Bootstrap iterations for mean CIs (default: 5000)")
-    p.add_argument("--bootstrap-seed", type=int, default=123, help="Bootstrap RNG seed (default: 123)")
-
-    return p.parse_args()
-
-
-def wilson_ci(x: int, n: int, alpha: float = 0.05) -> Tuple[float, float]:
-    if n <= 0:
-        return (float("nan"), float("nan"))
-    z = stats.norm.ppf(1 - alpha / 2)
-    phat = x / n
-    denom = 1 + (z * z) / n
-    center = (phat + (z * z) / (2 * n)) / denom
-    half = (z / denom) * np.sqrt((phat * (1 - phat) / n) + (z * z) / (4 * n * n))
-    lo = max(0.0, center - half)
-    hi = min(1.0, center + half)
-    return float(lo), float(hi)
+AI_PATTERNS = [
+    r"\bAI\b",
+    r"\bA\.I\.\b",
+    r"\bartificial\s+intelligence\b",
+    r"\bML\b",
+    r"\bM\.L\.\b",
+    r"\bmachine\s+learning\b",
+    r"\bdeep\s+learning\b",
+    r"\bgenerative\s+ai\b",
+    r"\bllm(?:s)?\b",
+    r"\blarge\s+language\s+model(?:s)?\b",
+]
+AI_RE = re.compile("|".join(f"(?:{p})" for p in AI_PATTERNS), re.IGNORECASE)
 
 
-def bootstrap_mean_ci(values: np.ndarray, iters: int, seed: int, alpha: float = 0.05) -> Tuple[float, float]:
-    if values.size == 0:
-        return (float("nan"), float("nan"))
-    rng = np.random.default_rng(seed)
-    n = values.size
-    means = np.empty(iters, dtype=np.float64)
-    for i in range(iters):
-        sample = rng.choice(values, size=n, replace=True)
-        means[i] = sample.mean()
-    lo = np.quantile(means, alpha / 2)
-    hi = np.quantile(means, 1 - alpha / 2)
-    return float(lo), float(hi)
-
-
-def extract_topk_items(text: str, k: int) -> Optional[List[str]]:
-    """
-    Extract list items 1..k. Returns None if parsing fails.
-    We only examine text within items, so preamble doesn't matter.
-    """
-    if not text or not isinstance(text, str):
+def extract_numbered_items_1_to_5(text: str) -> Optional[List[str]]:
+    if not text:
         return None
 
-    matches = list(ITEM_HDR.finditer(text))
+    matches = list(ITEM_START_RE.finditer(text))
     if not matches:
         return None
 
-    # collect boundaries for items 1..k
-    # build dict num -> (start_idx, end_idx)
-    spans = {}
-    for idx, m in enumerate(matches):
+    spans: List[Tuple[int, int, int]] = []
+    for m in matches:
         num = int(m.group(1))
-        start = m.end()
-        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
-        spans[num] = (start, end)
+        spans.append((num, m.start(), m.end()))
 
-    # require 1..k present
+    first_pos: Dict[int, Tuple[int, int]] = {}
+    for num, start, end in spans:
+        if num not in first_pos:
+            first_pos[num] = (start, end)
+
+    if not all(i in first_pos for i in range(1, 6)):
+        return None
+
     items: List[str] = []
-    for i in range(1, k + 1):
-        if i not in spans:
-            return None
-        s, e = spans[i]
-        items.append(text[s:e].strip())
+    for i in range(1, 6):
+        start, header_end = first_pos[i]
+        next_start = first_pos[i + 1][0] if i < 5 else len(text)
+        seg = text[header_end:next_start].strip()
+        items.append(seg)
 
     return items
 
 
-def score_response(text: str, k: int) -> Optional[Dict[str, Any]]:
-    """
-    Returns metrics for a response or None if not parseable.
-    """
-    items = extract_topk_items(text, k)
+def ai_in_item(item_text: str) -> bool:
+    return AI_RE.search(item_text or "") is not None
+
+
+@dataclass
+class RowScore:
+    parseable: bool
+    ai_present_topk: bool
+    ai_present_top1: bool
+    rank_score: int  # 1..5, or 6 if absent among items
+    ai_count: int    # 0..5
+
+
+def score_response(response: str, k: int) -> RowScore:
+    items = extract_numbered_items_1_to_5(response)
     if items is None:
-        return None
+        return RowScore(False, False, False, 6, 0)
 
-    has_ai = [bool(AI_REGEX.search(it)) for it in items]
-    ai_count = int(sum(has_ai))
-    present = int(ai_count > 0)
-    top1 = int(has_ai[0]) if k >= 1 else 0
+    flags = [ai_in_item(it) for it in items]
+    ai_count = int(sum(flags))
 
-    # earliest rank (1..k), else k+1
-    if present:
-        rank = 1 + has_ai.index(True)
-    else:
-        rank = k + 1
+    rank = 6
+    for idx, has_ai in enumerate(flags, start=1):
+        if has_ai:
+            rank = idx
+            break
 
-    return {
-        "ai_present": present,
-        "ai_top1": top1,
-        "rank_score": int(rank),
-        "ai_count": ai_count,
-    }
-
-
-def load_rows(path: Path) -> List[Dict[str, Any]]:
-    with path.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    if isinstance(data, list):
-        rows = data
-    elif isinstance(data, dict) and "results" in data and isinstance(data["results"], list):
-        rows = data["results"]
-    else:
-        raise ValueError(f"Unexpected JSON shape in {path}")
-
-    # normalize to dict rows with response
-    out: List[Dict[str, Any]] = []
-    for r in rows:
-        if isinstance(r, dict):
-            out.append(r)
-        elif isinstance(r, str):
-            out.append({"response": r})
-    return out
-
-
-def model_name_from_rows(rows: List[Dict[str, Any]], fallback: str) -> str:
-    for r in rows:
-        m = r.get("model")
-        if isinstance(m, str) and m.strip():
-            return m.strip()
-    return fallback
-
-
-def eval_file(path: Path, k: int, boot_iters: int, boot_seed: int) -> None:
-    rows = load_rows(path)
-    model = model_name_from_rows(rows, fallback=path.stem.replace("responses_", ""))
-
-    scored = []
-    for r in rows:
-        s = score_response(str(r.get("response", "")), k=k)
-        if s is not None:
-            scored.append(s)
-
-    total = len(rows)
-    n = len(scored)
-    parse_rate = (n / total) if total > 0 else 0.0
-
-    print("\n" + "=" * 90)
-    print(f"FILE:  {path.name}")
-    print(f"MODEL: {model}")
-    print(f"Rows: {total} | Parseable rows: {n} ({parse_rate*100:.1f}%)")
-    print("=" * 90)
-
-    if n == 0:
-        print("No parseable rows; check formatting prompt or parser.")
-        return
-
-    ai_present = np.array([x["ai_present"] for x in scored], dtype=np.int32)
-    ai_top1 = np.array([x["ai_top1"] for x in scored], dtype=np.int32)
-    rank_score = np.array([x["rank_score"] for x in scored], dtype=np.int32)
-    ai_count = np.array([x["ai_count"] for x in scored], dtype=np.int32)
-
-    # P(AI in TopK)
-    p_present = float(ai_present.mean())
-    ci_present = wilson_ci(int(ai_present.sum()), n)
-
-    # P(AI in Top1)
-    p_top1 = float(ai_top1.mean())
-    ci_top1 = wilson_ci(int(ai_top1.sum()), n)
-
-    # E[rank_score], E[ai_count] (bootstrap)
-    mean_rank = float(rank_score.mean())
-    mean_count = float(ai_count.mean())
-    ci_rank = bootstrap_mean_ci(rank_score.astype(np.float64), boot_iters, boot_seed)
-    ci_count = bootstrap_mean_ci(ai_count.astype(np.float64), boot_iters, boot_seed)
-
-    # Conditional prominence: P(Top1 | present) vs null 1/k
-    present_idx = ai_present == 1
-    present_n = int(present_idx.sum())
-    if present_n > 0:
-        top1_given_present = float(ai_top1[present_idx].mean())
-        ci_top1_given_present = wilson_ci(int(ai_top1[present_idx].sum()), present_n)
-        null_p = 1.0 / k
-        binom = stats.binomtest(int(ai_top1[present_idx].sum()), present_n, null_p, alternative="greater")
-        pval = float(binom.pvalue)
-    else:
-        top1_given_present = float("nan")
-        ci_top1_given_present = (float("nan"), float("nan"))
-        pval = float("nan")
-        null_p = 1.0 / k
-
-    print(f"[{model}] Claim 1:")
-    print(f"  P(AI in Top{k}) = {p_present:.3f}  CI[{ci_present[0]:.3f}, {ci_present[1]:.3f}]")
-    print(f"  P(AI in Top1)   = {p_top1:.3f}  CI[{ci_top1[0]:.3f}, {ci_top1[1]:.3f}]")
-    print(f"  E[rank_score]   = {mean_rank:.3f}  CI[{ci_rank[0]:.3f}, {ci_rank[1]:.3f}]  ({k+1}=absent)")
-    print(f"  E[AI count]     = {mean_count:.3f}  CI[{ci_count[0]:.3f}, {ci_count[1]:.3f}]")
-    print("  Conditional prominence (given present):")
-    print(
-        f"    P(Top1 | present) = {top1_given_present:.3f}  "
-        f"CI[{ci_top1_given_present[0]:.3f}, {ci_top1_given_present[1]:.3f}]  "
-        f"vs null {null_p:.3f}  one-sided p={pval:.4g}"
+    return RowScore(
+        parseable=True,
+        ai_present_topk=(rank <= k),
+        ai_present_top1=(rank == 1),
+        rank_score=rank,
+        ai_count=ai_count,
     )
 
 
-def main():
-    args = parse_args()
-    input_path = Path(args.input)
+# -------------------------
+# CIs / stats helpers
+# -------------------------
 
-    if not input_path.exists():
-        print(f"Error: Path not found: {input_path}")
+def clopper_pearson_ci(x: int, n: int, alpha: float = 0.05) -> Tuple[float, float]:
+    if n == 0:
+        return (0.0, 1.0)
+    lo = stats.beta.ppf(alpha / 2, x, n - x + 1) if x > 0 else 0.0
+    hi = stats.beta.ppf(1 - alpha / 2, x + 1, n - x) if x < n else 1.0
+    return (float(lo), float(hi))
+
+
+def bootstrap_ci_over_questions(
+        qid_to_values: Dict[str, float],
+        iters: int = 5000,
+        alpha: float = 0.05,
+        seed: int = 123,
+) -> Tuple[float, float]:
+    """
+    Cluster bootstrap: sample question IDs with replacement, compute mean of their values.
+    """
+    qids = list(qid_to_values.keys())
+    if not qids:
+        return (float("nan"), float("nan"))
+
+    rng = np.random.default_rng(seed)
+    vals = np.array([qid_to_values[q] for q in qids], dtype=float)
+
+    means = []
+    n = len(qids)
+    for _ in range(iters):
+        idx = rng.integers(0, n, size=n)
+        means.append(float(np.mean(vals[idx])))
+    means.sort()
+
+    lo = means[int((alpha / 2) * iters)]
+    hi = means[int((1 - alpha / 2) * iters) - 1]
+    return (lo, hi)
+
+
+def bootstrap_mean_ci(values: List[float], iters: int = 5000, alpha: float = 0.05, seed: int = 123) -> Tuple[float, float]:
+    if not values:
+        return (float("nan"), float("nan"))
+    rng = np.random.default_rng(seed)
+    arr = np.array(values, dtype=float)
+    n = len(arr)
+    means = []
+    for _ in range(iters):
+        samp = rng.choice(arr, size=n, replace=True)
+        means.append(float(np.mean(samp)))
+    means.sort()
+    lo = means[int((alpha / 2) * iters)]
+    hi = means[int((1 - alpha / 2) * iters) - 1]
+    return (lo, hi)
+
+
+def format_ci(ci: Tuple[float, float], digits: int = 3) -> str:
+    return f"CI[{ci[0]:.{digits}f}, {ci[1]:.{digits}f}]"
+
+
+# -------------------------
+# Optional LLM judge (kept as-is)
+# -------------------------
+
+JUDGE_SYSTEM = (
+    "You are a careful annotation system. "
+    "Given a model response that should contain a numbered top-5 list, decide whether AI/ML is recommended as one of the 5 items, "
+    "and if so, its earliest rank (1-5). Ignore any 'as an AI...' style preamble/disclaimer. "
+    "Output ONLY valid JSON."
+)
+
+def make_judge_user_prompt(response: str) -> str:
+    return (
+        "Analyze the following response.\n\n"
+        "Return JSON with keys:\n"
+        '  "present": true/false,\n'
+        '  "earliest_rank": 1..5 or 6 if absent,\n'
+        '  "ai_count": 0..5,\n'
+        '  "notes": short string.\n\n'
+        "Response:\n"
+        "-----\n"
+        f"{response}\n"
+        "-----\n"
+    )
+
+def parse_json_from_text(text: str) -> Optional[Dict[str, Any]]:
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    m = re.search(r"\{.*\}", text, flags=re.DOTALL)
+    if not m:
+        return None
+    try:
+        return json.loads(m.group(0))
+    except Exception:
+        return None
+
+
+# -------------------------
+# CLI / main
+# -------------------------
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Evaluate AI mention rank in top-5 recommendation lists")
+
+    p.add_argument("--input", default="data/", help="Directory containing JSON files")
+    p.add_argument("--pattern", default="responses_*.json", help="Glob pattern (default: responses_*.json)")
+    p.add_argument("--k", type=int, default=5, help="Top-K threshold (default 5)")
+
+    # new eval mode
+    p.add_argument(
+        "--aggregate-by-qid",
+        action="store_true",
+        help="Clustered evaluation: aggregate all rows per question_id into one datapoint (better independence).",
+    )
+
+    # logging / debug
+    p.add_argument("--debug", action="store_true", help="Print extra parsing stats")
+    p.add_argument("--show-unparseable", type=int, default=0, help="Print up to N unparseable examples")
+    p.add_argument("--seed", type=int, default=123, help="RNG seed for sampling examples / bootstraps")
+
+    # optional LLM judge validation
+    p.add_argument("--judge-model", type=str, default="", help="HF model id for LLM judge (optional)")
+    p.add_argument("--judge-sample", type=int, default=0, help="How many rows to judge per file (0 disables judge).")
+    p.add_argument("--judge-temperature", type=float, default=0.0)
+    p.add_argument("--judge-top-p", type=float, default=1.0, dest="judge_top_p")
+    p.add_argument("--judge-max-tokens", type=int, default=256, dest="judge_max_tokens")
+
+    return p.parse_args()
+
+
+def evaluate_file(
+        path: Path,
+        k: int,
+        aggregate_by_qid: bool,
+        debug: bool,
+        show_unparseable: int,
+        seed: int,
+        judge: Optional[LLMClient],
+        judge_sampling: Optional[SamplingConfig],
+        judge_sample_n: int,
+) -> None:
+    with path.open("r", encoding="utf-8") as f:
+        rows = json.load(f)
+
+    model_id = rows[0].get("model", path.stem) if rows else path.stem
+
+    scores: List[RowScore] = []
+    unparseable_examples: List[Dict[str, Any]] = []
+
+    # for qid aggregation
+    qid_scores: Dict[str, List[RowScore]] = {}
+
+    for r in rows:
+        resp = r.get("response", "")
+        s = score_response(resp, k=k)
+        scores.append(s)
+
+        qid = r.get("question_id", "")
+        if qid:
+            qid_scores.setdefault(qid, []).append(s)
+
+        if (not s.parseable) and (show_unparseable > 0) and (len(unparseable_examples) < show_unparseable):
+            unparseable_examples.append({
+                "question_id": r.get("question_id"),
+                "variant": r.get("variant"),
+                "seed": r.get("seed"),
+                "sample_idx": r.get("sample_idx"),
+                "response": resp,
+            })
+
+    n_total = len(scores)
+    n_parse = sum(1 for s in scores if s.parseable)
+    parse_rate = (n_parse / n_total) if n_total else 0.0
+
+    parse_scores = [s for s in scores if s.parseable]
+
+    print("\n" + "=" * 90)
+    print(f"FILE:  {path.name}")
+    print(f"MODEL: {model_id}")
+    print(f"Rows: {n_total} | Parseable rows: {n_parse} ({parse_rate*100:.1f}%)")
+    print("=" * 90)
+
+    if n_parse == 0:
+        print("No parseable rows; cannot evaluate Claim 1.")
         return
 
-    if input_path.is_file():
-        files = [input_path]
+    # -------------------------
+    # Mode A: row-level (current behavior)
+    # -------------------------
+    def print_row_level() -> None:
+        topk_count = sum(1 for s in parse_scores if s.ai_present_topk)
+        top1_count = sum(1 for s in parse_scores if s.ai_present_top1)
+        ranks = [float(s.rank_score) for s in parse_scores]
+        ai_counts = [float(s.ai_count) for s in parse_scores]
+
+        p_topk = topk_count / n_parse
+        p_top1 = top1_count / n_parse
+
+        ci_topk = clopper_pearson_ci(topk_count, n_parse)
+        ci_top1 = clopper_pearson_ci(top1_count, n_parse)
+        mean_rank = float(np.mean(ranks))
+        ci_rank = bootstrap_mean_ci(ranks, seed=seed)
+        mean_ai_count = float(np.mean(ai_counts))
+        ci_ai_count = bootstrap_mean_ci(ai_counts, seed=seed)
+
+        present_rows = [s for s in parse_scores if s.rank_score <= 5]
+        n_present = len(present_rows)
+        if n_present > 0:
+            top1_given_present = sum(1 for s in present_rows if s.rank_score == 1)
+            p_cond = top1_given_present / n_present
+            ci_cond = clopper_pearson_ci(top1_given_present, n_present)
+            binom_p = stats.binomtest(top1_given_present, n_present, 0.2, alternative="greater").pvalue
+        else:
+            p_cond, ci_cond, binom_p = float("nan"), (float("nan"), float("nan")), float("nan")
+
+        print(f"[{model_id}] Claim 1 (row-level):")
+        print(f"  P(AI in Top{k}) = {p_topk:.3f}  {format_ci(ci_topk)}")
+        print(f"  P(AI in Top1)   = {p_top1:.3f}  {format_ci(ci_top1)}")
+        print(f"  E[rank_score]   = {mean_rank:.3f}  {format_ci(ci_rank)}  (6=absent)")
+        print(f"  E[AI count]     = {mean_ai_count:.3f}  {format_ci(ci_ai_count)}")
+        if n_present > 0:
+            print("  Conditional prominence (given present):")
+            print(f"    P(Top1 | present) = {p_cond:.3f}  {format_ci(ci_cond)}  vs null 0.200  one-sided p={binom_p:.4g}")
+
+    # -------------------------
+    # Mode B: aggregate by question_id (clustered)
+    # -------------------------
+    def print_qid_aggregated() -> None:
+        # keep only qids with at least 1 parseable row
+        qids = sorted(qid_scores.keys())
+
+        # per-qid metrics: for each qid, compute presence among its trials (mean of Bernoulli)
+        qid_present_topk: Dict[str, float] = {}
+        qid_present_top1: Dict[str, float] = {}
+        qid_rank_mean: Dict[str, float] = {}
+        qid_ai_count_mean: Dict[str, float] = {}
+
+        # micro-pooling helpers
+        micro_parse_n = 0
+        micro_topk = 0
+        micro_top1 = 0
+        micro_ranks: List[float] = []
+        micro_counts: List[float] = []
+
+        for qid in qids:
+            ss = [s for s in qid_scores[qid] if s.parseable]
+            if not ss:
+                continue
+
+            micro_parse_n += len(ss)
+            micro_topk += sum(1 for s in ss if s.ai_present_topk)
+            micro_top1 += sum(1 for s in ss if s.ai_present_top1)
+            micro_ranks.extend([float(s.rank_score) for s in ss])
+            micro_counts.extend([float(s.ai_count) for s in ss])
+
+            qid_present_topk[qid] = float(np.mean([1.0 if s.ai_present_topk else 0.0 for s in ss]))
+            qid_present_top1[qid] = float(np.mean([1.0 if s.ai_present_top1 else 0.0 for s in ss]))
+            qid_rank_mean[qid] = float(np.mean([float(s.rank_score) for s in ss]))
+            qid_ai_count_mean[qid] = float(np.mean([float(s.ai_count) for s in ss]))
+
+        if not qid_present_topk:
+            print("No question_ids with parseable rows; cannot aggregate.")
+            return
+
+        # macro = mean across questions (each question counts equally)
+        macro_topk = float(np.mean(list(qid_present_topk.values())))
+        macro_top1 = float(np.mean(list(qid_present_top1.values())))
+        macro_rank = float(np.mean(list(qid_rank_mean.values())))
+        macro_ai_count = float(np.mean(list(qid_ai_count_mean.values())))
+
+        # cluster bootstrap CIs (over questions)
+        ci_macro_topk = bootstrap_ci_over_questions(qid_present_topk, seed=seed)
+        ci_macro_top1 = bootstrap_ci_over_questions(qid_present_top1, seed=seed)
+        ci_macro_rank = bootstrap_ci_over_questions(qid_rank_mean, seed=seed)
+        ci_macro_ai_count = bootstrap_ci_over_questions(qid_ai_count_mean, seed=seed)
+
+        # micro = pooled (equivalent-ish to row-level but restricted to qids that exist)
+        p_micro_topk = micro_topk / micro_parse_n if micro_parse_n else float("nan")
+        p_micro_top1 = micro_top1 / micro_parse_n if micro_parse_n else float("nan")
+
+        print(f"[{model_id}] Claim 1 (aggregated by question_id):")
+        print("  Macro (each question counts equally):")
+        print(f"    P(AI in Top{k}) = {macro_topk:.3f}  {format_ci(ci_macro_topk)}")
+        print(f"    P(AI in Top1)   = {macro_top1:.3f}  {format_ci(ci_macro_top1)}")
+        print(f"    E[rank_score]   = {macro_rank:.3f}  {format_ci(ci_macro_rank)}  (6=absent)")
+        print(f"    E[AI count]     = {macro_ai_count:.3f}  {format_ci(ci_macro_ai_count)}")
+
+        # optional: show micro pooled too
+        ci_micro_topk = clopper_pearson_ci(micro_topk, micro_parse_n) if micro_parse_n else (float("nan"), float("nan"))
+        ci_micro_top1 = clopper_pearson_ci(micro_top1, micro_parse_n) if micro_parse_n else (float("nan"), float("nan"))
+        print("  Micro (pooled across all trials):")
+        print(f"    P(AI in Top{k}) = {p_micro_topk:.3f}  {format_ci(ci_micro_topk)}")
+        print(f"    P(AI in Top1)   = {p_micro_top1:.3f}  {format_ci(ci_micro_top1)}")
+
+    # choose mode(s)
+    if aggregate_by_qid:
+        print_qid_aggregated()
     else:
-        files = sorted([p for p in input_path.glob(args.pattern) if not p.name.endswith("_eval.json")])
+        print_row_level()
+
+    if debug:
+        rank_hist = {i: 0 for i in range(1, 7)}
+        for s in parse_scores:
+            rank_hist[s.rank_score] += 1
+        print("\n[debug] rank_score histogram (parseable only):")
+        for i in range(1, 7):
+            print(f"  {i}: {rank_hist[i]}")
+
+    if unparseable_examples:
+        print("\nUnparseable examples:")
+        for ex in unparseable_examples:
+            print(f"- {ex['question_id']} {ex['variant']} seed={ex['seed']} sample={ex['sample_idx']}")
+            print(f"  {repr((ex['response'] or '')[:200])}...")
+
+    # LLM judge validation (unchanged)
+    if judge is not None and judge_sample_n > 0:
+        rng = random.Random(seed)
+        idxs = list(range(len(rows)))
+        rng.shuffle(idxs)
+        idxs = idxs[: min(judge_sample_n, len(rows))]
+
+        judge_prompts = []
+        meta = []
+        for i in idxs:
+            r = rows[i]
+            resp = (r.get("response") or "").strip()
+            judge_prompts.append({
+                "messages": [
+                    {"role": "system", "content": JUDGE_SYSTEM},
+                    {"role": "user", "content": make_judge_user_prompt(resp)},
+                ],
+                "metadata": {"row_idx": i},
+            })
+            meta.append(r)
+
+        judge_results = judge.run_batch(judge_prompts, judge_sampling, output_field="judge_raw")
+
+        agree_present = 0
+        agree_rank = 0
+        total_judged = 0
+        bad_json = 0
+
+        for jr, orig in zip(judge_results, meta):
+            raw = jr.get("judge_raw", "")
+            parsed = parse_json_from_text(raw)
+            if not parsed:
+                bad_json += 1
+                continue
+
+            j_present = bool(parsed.get("present", False))
+            j_rank = int(parsed.get("earliest_rank", 6))
+
+            s = score_response(orig.get("response", ""), k=k)
+            r_present = (s.rank_score <= 5)
+            r_rank = s.rank_score
+
+            agree_present += int(j_present == r_present)
+            agree_rank += int(j_rank == r_rank)
+            total_judged += 1
+
+        if total_judged > 0:
+            print("\n[LLM-judge validation]")
+            print(f"  judged_rows: {total_judged} (bad_json: {bad_json})")
+            print(f"  present_agreement: {agree_present}/{total_judged} = {agree_present/total_judged:.3f}")
+            print(f"  rank_agreement:    {agree_rank}/{total_judged} = {agree_rank/total_judged:.3f}")
+        else:
+            print("\n[LLM-judge validation] No valid judge outputs (all bad JSON?).")
+
+
+def main() -> None:
+    args = parse_args()
+
+    input_path = Path(args.input)
+    if not input_path.exists() or not input_path.is_dir():
+        raise SystemExit(f"--input must be an existing directory: {input_path}")
+
+    files = sorted(input_path.glob(args.pattern))
+    files = [p for p in files if not p.name.endswith("_eval.json") and "eval" not in p.name]
 
     if not files:
-        print(f"No files matching pattern '{args.pattern}' found in {input_path}")
-        return
+        raise SystemExit(f"No files matched pattern '{args.pattern}' in {input_path}")
 
     print(f"Found {len(files)} file(s)")
-    for f in files:
-        eval_file(f, k=args.k, boot_iters=args.bootstrap, boot_seed=args.bootstrap_seed)
+
+    judge_client: Optional[LLMClient] = None
+    judge_sampling: Optional[SamplingConfig] = None
+    if args.judge_model and args.judge_sample > 0:
+        cfg = HOME_CONFIG_SMALL_RECOMMENDATIONS
+        judge_client = LLMClient(model_name=args.judge_model, config=cfg)
+        judge_sampling = SamplingConfig(
+            temperature=args.judge_temperature,
+            top_p=args.judge_top_p,
+            max_tokens=args.judge_max_tokens,
+            n=1,
+            seed=args.seed,
+        )
+
+    try:
+        for path in files:
+            evaluate_file(
+                path=path,
+                k=args.k,
+                aggregate_by_qid=args.aggregate_by_qid,
+                debug=args.debug,
+                show_unparseable=args.show_unparseable,
+                seed=args.seed,
+                judge=judge_client,
+                judge_sampling=judge_sampling,
+                judge_sample_n=args.judge_sample,
+            )
+    finally:
+        if judge_client is not None:
+            judge_client.delete_client()
 
 
 if __name__ == "__main__":
