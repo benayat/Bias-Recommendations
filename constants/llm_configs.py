@@ -18,9 +18,9 @@ HOME_CONFIG = LLMResourceConfig(
 )
 HOME_CONFIG_SMALL_RECOMMENDATIONS = LLMResourceConfig(
     gpu_memory_utilization = 0.95,
-    max_model_len=512,
-    max_num_seqs=64,
-    max_num_batched_tokens=32768,
+    max_model_len=4096,
+    max_num_seqs=16,
+    max_num_batched_tokens=65536,
     block_size=16,  # Standard KV cache block size
     tensor_parallel_size=1,  # Single GPU
     dtype="auto",  # Automatic data type selection
