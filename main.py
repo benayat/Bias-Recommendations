@@ -35,7 +35,7 @@ from llm import LLMClient, SamplingConfig
 
 
 LIST_ONLY_SYSTEM_PROMPT = (
-    "Return ONLY a numbered list of exactly 5 items (1-5). "
+    "Return ONLY a numbered list of exactly 5 items (1-5), each explained briefly in 1-2 sentences."
     "No introduction, no disclaimers, no extra text before item 1 or after item 5."
 )
 
