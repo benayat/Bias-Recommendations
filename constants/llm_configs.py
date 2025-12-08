@@ -18,9 +18,9 @@ HOME_CONFIG = LLMResourceConfig(
 )
 HOME_CONFIG_SMALL_RECOMMENDATIONS = LLMResourceConfig(
     gpu_memory_utilization = 0.95,
-    max_model_len=512,
-    max_num_seqs=16,
-    max_num_batched_tokens=65536,
+    max_model_len=700,
+    max_num_seqs=32,
+    max_num_batched_tokens=22400,
     block_size=16,  # Standard KV cache block size
     tensor_parallel_size=1,  # Single GPU
     dtype="auto",  # Automatic data type selection
@@ -28,7 +28,7 @@ HOME_CONFIG_SMALL_RECOMMENDATIONS = LLMResourceConfig(
     disable_log_stats=True,  # Disable verbose logging
     max_parallel_loading_workers=4,  # Parallel loading for faster startup
     enable_prefix_caching=True,  # Enable prefix caching
-    enforce_eager=True,  # Use default execution mode
+    enforce_eager=False,  # Use default execution mode
     use_transformers=False,  # Use vLLM backend
 )
 

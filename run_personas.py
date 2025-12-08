@@ -14,6 +14,7 @@ from llm import LLMClient, SamplingConfig
 def parse_args():
     parser = argparse.ArgumentParser(description="Run all personas against questions")
     parser.add_argument("--model", required=True, help="Hugging Face model id")
+    parser.add_argument("--scale-for-model-size", action="store_true", help="Scale LLM config for model size")
     return parser.parse_args()
 
 
@@ -56,11 +57,16 @@ def main():
     print(f"Total prompts in batch: {len(prompts)}")
 
     # Setup LLM client
+    model_size_match = re.search(r"(\d+(?:\.\d+)?)[Bb]\b", model_id)
+    model_size_b = float(model_size_match.group(1)) if model_size_match else None
     config = HOME_CONFIG_SMALL_RECOMMENDATIONS
+    if args.scale_for_model_size and model_size_b is not None:
+        print(f"Scaling LLM config for model size: {model_size_b}B")
+        config.scale_for_model_size(model_size_b)
     llm = LLMClient(model_name=model_id, config=config)
 
     # Single batch call
-    sampling_params = SamplingConfig(temperature=0.7, top_p=1.0, max_tokens=2048)
+    sampling_params = SamplingConfig(temperature=0.7, top_p=1.0, max_tokens=500)
     results = []
 
     try:
