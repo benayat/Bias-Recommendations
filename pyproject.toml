@@ -9,6 +9,7 @@ dependencies = [
     "openai>=2.8.1",
     "pandas>=2.3.3",
     "project-to-markdown>=0.1.6",
+    "torch-c-dlpack-ext>=0.1.3",
     "transformers>=4.57.3",
     "vllm>=0.11.2",
 ]

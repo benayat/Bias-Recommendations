@@ -2757,6 +2757,7 @@ dependencies = [
     { name = "openai" },
     { name = "pandas" },
     { name = "project-to-markdown" },
+    { name = "torch-c-dlpack-ext" },
     { name = "transformers" },
     { name = "vllm" },
 ]
@@ -2767,6 +2768,7 @@ requires-dist = [
     { name = "openai", specifier = ">=2.8.1" },
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "project-to-markdown", specifier = ">=0.1.6" },
+    { name = "torch-c-dlpack-ext", specifier = ">=0.1.3" },
     { name = "transformers", specifier = ">=4.57.3" },
     { name = "vllm", specifier = ">=0.11.2" },
 ]
@@ -3457,6 +3459,29 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/62/51/dc3b4e2f9ba98ae27238f0153ca098bf9340b2dafcc67fde645d496dfc2a/torch-2.9.0-cp314-cp314t-manylinux_2_28_aarch64.whl", hash = "sha256:c08fb654d783899e204a32cca758a7ce8a45b2d78eeb89517cc937088316f78e", size = 104140340, upload-time = "2025-10-15T15:50:19.67Z" },
     { url = "https://files.pythonhosted.org/packages/c0/8d/b00657f8141ac16af7bb6cda2e67de18499a3263b78d516b9a93fcbc98e3/torch-2.9.0-cp314-cp314t-manylinux_2_28_x86_64.whl", hash = "sha256:ec8feb0099b2daa5728fbc7abb0b05730fd97e0f359ff8bda09865aaa7bd7d4b", size = 899731750, upload-time = "2025-10-15T15:49:36.673Z" },
     { url = "https://files.pythonhosted.org/packages/fc/29/bd361e0cbb2c79ce6450f42643aaf6919956f89923a50571b0ebfe92d142/torch-2.9.0-cp314-cp314t-win_amd64.whl", hash = "sha256:695ba920f234ad4170c9c50e28d56c848432f8f530e6bc7f88fcb15ddf338e75", size = 109503850, upload-time = "2025-10-15T15:50:24.118Z" },
+]
+
+[[package]]
+name = "torch-c-dlpack-ext"
+version = "0.1.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "torch" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/34/1a/adafdc49546ffe0041f52471da51c084243094382b99332b5706e90ba26a/torch_c_dlpack_ext-0.1.3.tar.gz", hash = "sha256:4b5da66432af7224dcf02aad4f13cc416eeef5331cd153588b7e081a193f4972", size = 3334, upload-time = "2025-11-22T03:50:48.089Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d5/15/e6d5aac2f641cb7c92df38214d0c618fbb54c6eee5166bcec265dcee09cb/torch_c_dlpack_ext-0.1.3-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:2b7d64453fa62c75551f2413cde55748a3461af475da386b2e709239555e07c3", size = 5281590, upload-time = "2025-11-22T03:50:31.435Z" },
+    { url = "https://files.pythonhosted.org/packages/2e/89/bf9624c21c91d28234ca3cb5a06807afa8ea611d7cdaf77bbcd5016631ad/torch_c_dlpack_ext-0.1.3-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:cd69fb034cd638eb0908767d74e5d0ea87df18d366b18d66c2c3472b29c80e5e", size = 433546, upload-time = "2025-11-22T03:50:32.824Z" },
+    { url = "https://files.pythonhosted.org/packages/64/5f/b572c13b131280e4abcb97712fee0bf40a87bfa7c1f93d263fe3c0ec0a5a/torch_c_dlpack_ext-0.1.3-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:8ebf732b5079912e0b85f32a75bae6932f021fbc13c2dff1c9f7cea437b71345", size = 888188, upload-time = "2025-11-22T03:50:34.032Z" },
+    { url = "https://files.pythonhosted.org/packages/02/8f/d3bd2a79d9d65f777d6e18afb0975cc0f2047c99bd7a9fffbe4c1599ec77/torch_c_dlpack_ext-0.1.3-cp312-cp312-win_amd64.whl", hash = "sha256:69685ac393f1f402c289ac04435120d518bde890388474fe2f8a58e7d290eb50", size = 1473786, upload-time = "2025-11-22T03:55:51.668Z" },
+    { url = "https://files.pythonhosted.org/packages/9e/af/a641ffe11fc84ecf6ec3330486fc4165ea4918e7fb997ac0e329310e8bb5/torch_c_dlpack_ext-0.1.3-cp313-cp313-macosx_14_0_arm64.whl", hash = "sha256:5f87b18064c017edb240b1766e858d18fe9472c11180a2811216293376ba6ef0", size = 1993741, upload-time = "2025-11-22T03:50:35.654Z" },
+    { url = "https://files.pythonhosted.org/packages/0d/fd/ef7e878c874bc4b7670cc6b508a85809a812173c3fe81adf580a81912ea9/torch_c_dlpack_ext-0.1.3-cp313-cp313-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:2afc7165195f4a256aab16147040d63a0cc55b7c530946d9726125268a54303a", size = 434257, upload-time = "2025-11-22T03:50:37.304Z" },
+    { url = "https://files.pythonhosted.org/packages/18/2f/5b77600735ee77d0881a4524f8b0cddada686be2db5f914e289a3b97b57e/torch_c_dlpack_ext-0.1.3-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:96743df478df006b21ae18111f4a2528abcc46131389b8d99176c37c30559474", size = 745747, upload-time = "2025-11-22T03:50:38.624Z" },
+    { url = "https://files.pythonhosted.org/packages/d5/88/2a4820b5caf97cbe0590931d1af83bce8c7b919b8937c923d374618326a4/torch_c_dlpack_ext-0.1.3-cp313-cp313-win_amd64.whl", hash = "sha256:74f491fe1ec64ff631a4844ef87339a1e825d375d87bad79ec8e9b922292a043", size = 989827, upload-time = "2025-11-22T03:55:53.445Z" },
+    { url = "https://files.pythonhosted.org/packages/f4/b1/cd525b9fe2d2276444e75aefeff09427bf026dba11358f0f6804e307f942/torch_c_dlpack_ext-0.1.3-cp314-cp314-macosx_14_0_arm64.whl", hash = "sha256:61d17b3be0c43c846e8ff4c54e5f05a35daeb8453fb14cec05742fcce41bada7", size = 1984525, upload-time = "2025-11-22T03:50:40.405Z" },
+    { url = "https://files.pythonhosted.org/packages/f8/e7/2b8d23047116e239d8587cf55e5212abad0f03a4a08e8f26f354e936c638/torch_c_dlpack_ext-0.1.3-cp314-cp314-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:aa8bf3a52fc13306866282e204ee6979a0cabaf64c8ef8d6ee700d4c4b2519a1", size = 154267, upload-time = "2025-11-22T03:50:41.709Z" },
+    { url = "https://files.pythonhosted.org/packages/8d/19/efdffe469a5dc2f4782e704ce9c7f28b89513d5871390d34e8377a095e0b/torch_c_dlpack_ext-0.1.3-cp314-cp314-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:5fa48bb2e613c3a1fec135edbde1c7923a20b7dc3a5a3f2d17be7e0a7d333b18", size = 162142, upload-time = "2025-11-22T03:50:42.807Z" },
+    { url = "https://files.pythonhosted.org/packages/ad/96/223ba3cda26cc695eab4480297854b69558419239805e4c418efd26fa1ae/torch_c_dlpack_ext-0.1.3-cp314-cp314-win_amd64.whl", hash = "sha256:d7344b830359c4ef3165c10a82de96daf711a38c21b18b82c30d9d8dcd3e4529", size = 267715, upload-time = "2025-11-22T03:55:55.198Z" },
 ]
 
 [[package]]
