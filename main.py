@@ -2,10 +2,9 @@ import re
 import copy
 from pathlib import Path
 import argparse
+import json
 
-import pandas as pd
-
-from constants import SMALL_MODELS_LIST, HOME_CONFIG, QUESTIONS, QID_ORDER
+from constants import HOME_CONFIG, QUESTIONS, QID_ORDER
 from llm import LLMClient, SamplingConfig, LLMResourceConfig
 
 
@@ -58,8 +57,8 @@ def parse_args():
 
 
 def main():
-    out_path = Path("data/responses.csv")
-    out_path.parent.mkdir(parents=True, exist_ok=True)
+    # We'll create the output path after we know the model id so each run writes
+    # to its own file (one file per model/run).
 
     all_rows = []
     base_prompts = _build_prompts()
@@ -67,6 +66,11 @@ def main():
 
     model_id = args.model
     print(f"Processing model: {model_id}")
+
+    # Create a filesystem-safe filename from the model id
+    sanitized_model = re.sub(r"[^A-Za-z0-9._-]+", "_", model_id)
+    out_path = Path(f"data/responses_{sanitized_model}.json")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Extract model size like "70b", "4B", "1.5b" etc.
     model_size_match = re.search(r"(\d+(?:\.\d+)?)[Bb]\b", model_id)
@@ -86,12 +90,13 @@ def main():
         cfg = LLMResourceConfig(**base_cfg.__dict__) if not isinstance(base_cfg, LLMResourceConfig) else base_cfg
 
     cfg.max_model_len = 4096  # longer responses
-
     llm = LLMClient(model_name=model_id, config=cfg)
 
+    results = []
     try:
         results = llm.run_batch(base_prompts, sampling_params, output_field="response")
     finally:
+        # ensure we always clean up the client
         llm.delete_client()
 
     for r in results:
@@ -106,8 +111,10 @@ def main():
             }
         )
 
-    df = pd.DataFrame(all_rows)
-    df.to_csv(out_path, index=False)
+    # Write pretty JSON (list) for readability — one JSON array containing all responses.
+    with out_path.open("w", encoding="utf-8") as fh:
+        json.dump(all_rows, fh, ensure_ascii=False, indent=2)
+
     print(f"Wrote: {out_path}")
 
 
