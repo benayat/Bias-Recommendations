@@ -82,7 +82,7 @@ class LLMClient:
     ):
         self.model_name = model_name
         self.config = config
-        self.disable_thinking = "Qwen" in model_name and not "Instruct" in model_name
+        self.disable_thinking = "Qwen3" in model_name and not "Instruct" in model_name
 
         # vLLM engine
         self.llm = LLM(self.model_name, **config.to_vllm_config())
@@ -115,7 +115,7 @@ class LLMClient:
             messages,
             tokenize=False,
             add_generation_prompt=True,
-            chat_template_kwargs={"enable_thinking": False} if self.disable_thinking else {}
+            enable_thinking=False if self.disable_thinking else True
         )
 
     def _batch_tokenize_messages(self, prompts: List[Dict[str, Any]]) -> list[TokensPrompt]:
