@@ -51,6 +51,8 @@ def parse_args() -> argparse.Namespace:
 
     # model / config
     p.add_argument("--model", required=True, help="Hugging Face model id")
+    p.add_argument("--tensor-parallel-size", type=int, default=1,
+                   help="Tensor parallel size (overrides LLM config)")
     p.add_argument("--scale-for-model-size", action="store_true", help="Scale LLM config for model size")
 
     # variants
@@ -162,6 +164,8 @@ def main() -> None:
             model_size_b = float(m.group(1))
             print(f"Scaling LLM config for model size: {model_size_b}B")
             config.scale_for_model_size(model_size_b)
+    if args.tensor_parallel_size and args.tensor_parallel_size > 1:
+        config.tensor_parallel_size = args.tensor_parallel_size
 
     llm = LLMClient(model_name=model_id, config=config)
 
