@@ -53,6 +53,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--model", required=True, help="Hugging Face model id")
     p.add_argument("--tensor-parallel-size", type=int, default=1,
                    help="Tensor parallel size (overrides LLM config)")
+    p.add_argument("--enforce-eager", action="store_true", help="Enforce eager execution mode")
     p.add_argument("--scale-for-model-size", action="store_true", help="Scale LLM config for model size")
 
     # variants
@@ -166,7 +167,8 @@ def main() -> None:
             config.scale_for_model_size(model_size_b)
     if args.tensor_parallel_size and args.tensor_parallel_size > 1:
         config.tensor_parallel_size = args.tensor_parallel_size
-
+    if args.enforce_eager:
+        config.enforce_eager = True
     llm = LLMClient(model_name=model_id, config=config)
 
     all_rows: List[Dict[str, Any]] = []
