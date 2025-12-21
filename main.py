@@ -148,14 +148,16 @@ def main() -> None:
 
     model_id = args.model
     seeds = _parse_seeds(args.seed, args.seeds)
-
-    prompts = build_batch_prompts(args.system_prompt, args.include_paraphrases)
+    system_prompt = args.system_prompt if "gpt-oss" not in model_id else "Reasoning: low\n"+args.system_prompt
+    prompts = build_batch_prompts(system_prompt, args.include_paraphrases)
 
     print(f"Model: {model_id}")
     print(f"Questions: {len(QUESTIONS)} | Include paraphrases: {args.include_paraphrases}")
     print(f"Total prompts per pass: {len(prompts)}")
     print(f"Decoding: temp={args.temperature} top_p={args.top_p} max_tokens={args.max_tokens} n={args.n}")
     print(f"Seeds: {seeds}")
+
+
 
     # config
     config = HOME_CONFIG_SMALL_RECOMMENDATIONS
@@ -169,6 +171,7 @@ def main() -> None:
         config.tensor_parallel_size = args.tensor_parallel_size
     if args.enforce_eager:
         config.enforce_eager = True
+
     llm = LLMClient(model_name=model_id, config=config)
 
     all_rows: List[Dict[str, Any]] = []
