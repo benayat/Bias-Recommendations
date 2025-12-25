@@ -169,6 +169,8 @@ def main() -> None:
         config.tensor_parallel_size = args.tensor_parallel_size
     if args.enforce_eager:
         config.enforce_eager = True
+    if "deepseek" in args.model:
+        config.max_model_len = 2048
     llm = LLMClient(model_name=model_id, config=config)
 
     all_rows: List[Dict[str, Any]] = []
