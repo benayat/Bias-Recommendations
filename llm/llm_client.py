@@ -83,6 +83,7 @@ class LLMClient:
         self.model_name = model_name
         self.config = config
         self.disable_thinking = ("Qwen3" in model_name or "deepseek" in model_name) and not "Instruct" in model_name
+        self.is_deepseek = "deepseek" in model_name.lower()
 
         # vLLM engine
         self.llm = LLM(self.model_name, **config.to_vllm_config())
@@ -100,6 +101,29 @@ class LLMClient:
     # ---------------------------------------------------------------------
     # Internal helpers
     # ---------------------------------------------------------------------
+
+    def _post_process_output(self, text: str) -> str:
+        """
+        Post-process output text. For deepseek models, extract only content after </nthink> tag.
+
+        Args:
+            text: Raw output text from the model
+
+        Returns:
+            Processed text (content after </nthink> for deepseek, unchanged for others)
+        """
+        if not self.is_deepseek:
+            return text
+
+        # For deepseek models, extract content after </nthink> tag
+        nthink_end = "</nthink>"
+        if nthink_end in text:
+            # Find the position after </nthink> and return everything after it
+            idx = text.find(nthink_end) + len(nthink_end)
+            return text[idx:].strip()
+
+        # If no </nthink> tag found, return as-is
+        return text
 
     def _messages_to_text(self, messages: List[Dict[str, str]]) -> str:
         """
@@ -190,7 +214,7 @@ class LLMClient:
             return [
                 {
                     **prompts[i].get("metadata", {}),
-                    output_field: outputs[i].outputs[0].text.strip(),
+                    output_field: self._post_process_output(outputs[i].outputs[0].text.strip()),
                 }
                 for i in range(len(outputs))
             ]
