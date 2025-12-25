@@ -116,7 +116,7 @@ class LLMClient:
             return text
 
         # For deepseek models, extract content after </nthink> tag
-        nthink_end = "</nthink>"
+        nthink_end = "</think>\n\n"
         if nthink_end in text:
             # Find the position after </nthink> and return everything after it
             idx = text.find(nthink_end) + len(nthink_end)
