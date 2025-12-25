@@ -82,7 +82,7 @@ class LLMClient:
     ):
         self.model_name = model_name
         self.config = config
-        self.disable_thinking = "Qwen3" in model_name and not "Instruct" in model_name
+        self.disable_thinking = ("Qwen3" in model_name or "deepseek" in model_name) and not "Instruct" in model_name
 
         # vLLM engine
         self.llm = LLM(self.model_name, **config.to_vllm_config())
