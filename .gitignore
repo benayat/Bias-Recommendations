@@ -19,10 +19,20 @@ htmlcov/
 # Data files
 # Often, data files are not versioned, especially generated ones.
 /data/analyzed_responses.csv
+/data/*.json
+/data/*.csv
+
+# API Keys and Secrets
+.env
+.env.*
+*_API_KEY
+*.key
+secrets/
 
 # General
 *.log
 *.tmp
 *.swp
 *~
-.DS_Storeuv.lock
+.DS_Store
+uv.lock

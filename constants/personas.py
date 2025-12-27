@@ -14,4 +14,9 @@ PERSONAS = {
 
 
 # Completion suffix for personas
-PERSONA_COMPLETION_SUFFIX = ""
+PERSONA_COMPLETION_SUFFIX = (
+    "Output exactly 5 recommendations as a numbered list (1-5). "
+    "Each item must be formatted as: '<label> — <1–2 sentence rationale>'. "
+    "The label should be 2–8 words (not a single word). "
+    "No text before item 1 and no text after item 5."
+)
