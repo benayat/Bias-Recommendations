@@ -201,10 +201,11 @@ Welch's t-test is used instead of Student's t-test because:
 
 **Key Statistical Findings:**
 - All comparisons show **p < 0.001** (highly significant)
-- Closed models show ~12% higher AI mention rate (87.6% vs 75.9%)
-- Closed models show ~29% higher unconditional Top-1 rate (76.6% vs 47.7%)
-- Closed models show ~25% higher conditional Top-1 rate (87.4% vs 62.9%)
-- Mean rank for closed models: 1.24 (conditional) vs 1.71 for open models
+- **P(AI in Top-5)**: Closed 0.876 [CI: 0.847, 0.905] vs Open 0.759 [CI: 0.736, 0.782] — 13.4% relative difference
+- **P(AI in Top-1) Unconditional**: Closed 0.766 [CI: 0.729, 0.803] vs Open 0.477 [CI: 0.450, 0.505] — 37.7% relative difference
+- **P(AI in Top-1 | AI present) Conditional**: Closed 0.874 [CI: 0.843, 0.906] vs Open 0.629 [CI: 0.598, 0.659] — 28.1% relative difference
+- **Mean Rank (Hybrid, absences=6)**: Closed 1.83 [CI: 1.68, 1.98] vs Open 2.75 [CI: 2.63, 2.86] — 50.2% relative difference
+- **Mean Rank (Conditional, only present)**: Closed 1.24 [CI: 1.17, 1.31] vs Open 1.71 [CI: 1.64, 1.78] — 38.4% relative difference
 
 
 ## Data Format

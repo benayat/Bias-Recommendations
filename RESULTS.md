@@ -236,36 +236,36 @@ P(Top1 | present) = 0.592  CI[0.468, 0.707]  vs null 0.200  one-sided p=5.592e-1
 
 2. Open vs Closed Source LLMs:
    --- Welch's t-test: P(AI in Top-5) [Frequency] ---
-   Open Mean: 0.7591 (n=1295)
-   Closed Mean: 0.8760 (n=500)
-   Difference: -0.1169
+   Open   Mean: 0.7591  (n=1295)  [95% CI: 0.7358, 0.7824]
+   Closed Mean: 0.8760  (n=500)  [95% CI: 0.8470, 0.9050]
+   Difference: -0.1169 (Relative vs Closed: -13.35%)
    t-statistic: -6.1710 | p-value: 9.341e-10
    Result: Statistically Significant (p < 0.05)
 
 --- Welch's t-test: P(AI is Top-1) [Outcome / Unconditional] ---
-Open Mean: 0.4772 (n=1295)
-Closed Mean: 0.7660 (n=500)
-Difference: -0.2888
+Open   Mean: 0.4772  (n=1295)  [95% CI: 0.4500, 0.5045]
+Closed Mean: 0.7660  (n=500)  [95% CI: 0.7288, 0.8032]
+Difference: -0.2888 (Relative vs Closed: -37.70%)
 t-statistic: -12.2912 | p-value: 1.475e-32
 Result: Statistically Significant (p < 0.05)
 
 --- Welch's t-test: P(AI is Top-1 | AI Present) [Priority / Conditional] ---
-Open Mean: 0.6287 (n=983)
-Closed Mean: 0.8744 (n=438)
-Difference: -0.2457
+Open   Mean: 0.6287  (n=983)  [95% CI: 0.5984, 0.6589]
+Closed Mean: 0.8744  (n=438)  [95% CI: 0.8433, 0.9056]
+Difference: -0.2457 (Relative vs Closed: -28.10%)
 t-statistic: -11.1130 | p-value: 2.32e-27
 Result: Statistically Significant (p < 0.05)
 
 --- Welch's t-test: Mean Rank (Hybrid: Includes Absences) ---
-Open Mean: 2.7452 (n=1295)
-Closed Mean: 1.8280 (n=500)
-Difference: 0.9172
+Open   Mean: 2.7452  (n=1295)  [95% CI: 2.6314, 2.8590]
+Closed Mean: 1.8280  (n=500)  [95% CI: 1.6773, 1.9787]
+Difference: 0.9172 (Relative vs Closed: 50.17%)
 t-statistic: 9.5389 | p-value: 9.012e-21
 Result: Statistically Significant (p < 0.05)
 
 --- Welch's t-test: Mean Rank (Conditional: Only Present) ---
-Open Mean: 1.7121 (n=983)
-Closed Mean: 1.2374 (n=438)
-Difference: 0.4747
+Open   Mean: 1.7121  (n=983)  [95% CI: 1.6405, 1.7837]
+Closed Mean: 1.2374  (n=438)  [95% CI: 1.1685, 1.3064]
+Difference: 0.4747 (Relative vs Closed: 38.36%)
 t-statistic: 9.3832 | p-value: 2.929e-20
 Result: Statistically Significant (p < 0.05)
