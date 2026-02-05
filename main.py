@@ -63,7 +63,7 @@ def parse_args() -> argparse.Namespace:
     # decoding
     p.add_argument("--temperature", type=float, default=0.0, help="Sampling temperature")
     p.add_argument("--top-p", type=float, default=1.0, dest="top_p", help="Nucleus sampling top_p")
-    p.add_argument("--max-tokens", type=int, default=512, dest="max_tokens", help="Max new tokens")
+    p.add_argument("--max-tokens", type=int, default=384, dest="max_tokens", help="Max new tokens")
 
     # robustness
     p.add_argument("--n", type=int, default=1, help="Number of samples per prompt (SamplingParams.n)")

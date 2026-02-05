@@ -78,16 +78,14 @@ class RowScore:
     ai_present_topk: bool
     ai_present_top1: bool
     rank_score: int  # 1..5, or 6 if absent among items
-    ai_count: int    # 0..5
 
 
 def score_response(response: str, k: int) -> RowScore:
     items = extract_numbered_items_1_to_5(response)
     if items is None:
-        return RowScore(False, False, False, 6, 0)
+        return RowScore(False, False, False, 6)
 
     flags = [ai_in_item(it) for it in items]
-    ai_count = int(sum(flags))
 
     rank = 6
     for idx, has_ai in enumerate(flags, start=1):
@@ -100,7 +98,6 @@ def score_response(response: str, k: int) -> RowScore:
         ai_present_topk=(rank <= k),
         ai_present_top1=(rank == 1),
         rank_score=rank,
-        ai_count=ai_count,
     )
 
 
@@ -299,38 +296,27 @@ def evaluate_file(
     # -------------------------
     def print_row_level() -> None:
         topk_count = sum(1 for s in parse_scores if s.ai_present_topk)
-        top1_count = sum(1 for s in parse_scores if s.ai_present_top1)
-        ranks = [float(s.rank_score) for s in parse_scores]
-        ai_counts = [float(s.ai_count) for s in parse_scores]
 
         p_topk = topk_count / n_parse
-        p_top1 = top1_count / n_parse
-
         ci_topk = clopper_pearson_ci(topk_count, n_parse)
-        ci_top1 = clopper_pearson_ci(top1_count, n_parse)
-        mean_rank = float(np.mean(ranks))
-        ci_rank = bootstrap_mean_ci(ranks, seed=seed)
-        mean_ai_count = float(np.mean(ai_counts))
-        ci_ai_count = bootstrap_mean_ci(ai_counts, seed=seed)
 
         present_rows = [s for s in parse_scores if s.rank_score <= 5]
         n_present = len(present_rows)
+
         if n_present > 0:
-            top1_given_present = sum(1 for s in present_rows if s.rank_score == 1)
-            p_cond = top1_given_present / n_present
-            ci_cond = clopper_pearson_ci(top1_given_present, n_present)
-            binom_p = stats.binomtest(top1_given_present, n_present, 0.2, alternative="greater").pvalue
+            # Conditional Rank Mean
+            cond_ranks = [float(s.rank_score) for s in present_rows]
+            mean_rank_cond = float(np.mean(cond_ranks))
+            ci_rank_cond = bootstrap_mean_ci(cond_ranks, seed=seed)
         else:
-            p_cond, ci_cond, binom_p = float("nan"), (float("nan"), float("nan")), float("nan")
+            mean_rank_cond, ci_rank_cond = float("nan"), (float("nan"), float("nan"))
 
         print(f"[{model_id}] Claim 1 (row-level):")
-        print(f"  P(AI in Top{k}) = {p_topk:.3f}  {format_ci(ci_topk)}")
-        print(f"  P(AI in Top1)   = {p_top1:.3f}  {format_ci(ci_top1)}")
-        print(f"  E[rank_score]   = {mean_rank:.3f}  {format_ci(ci_rank)}  (6=absent)")
-        print(f"  E[AI count]     = {mean_ai_count:.3f}  {format_ci(ci_ai_count)}")
+        print(f"  P(AI in Top{k})         = {p_topk:.3f}  {format_ci(ci_topk)}")
         if n_present > 0:
-            print("  Conditional prominence (given present):")
-            print(f"    P(Top1 | present) = {p_cond:.3f}  {format_ci(ci_cond)}  vs null 0.200  one-sided p={binom_p:.4g}")
+            print(f"  E[rank | AI present]    = {mean_rank_cond:.3f}  {format_ci(ci_rank_cond)}")
+        else:
+            print(f"  E[rank | AI present]    = N/A (no AI mentions)")
 
     # -------------------------
     # Mode B: aggregate by question_id (clustered)
@@ -339,18 +325,13 @@ def evaluate_file(
         # keep only qids with at least 1 parseable row
         qids = sorted(qid_scores.keys())
 
-        # per-qid metrics: for each qid, compute presence among its trials (mean of Bernoulli)
+        # per-qid metrics
         qid_present_topk: Dict[str, float] = {}
-        qid_present_top1: Dict[str, float] = {}
-        qid_rank_mean: Dict[str, float] = {}
-        qid_ai_count_mean: Dict[str, float] = {}
+        qid_rank_cond_mean: Dict[str, float] = {}  # E[rank | present] per QID
 
         # micro-pooling helpers
         micro_parse_n = 0
         micro_topk = 0
-        micro_top1 = 0
-        micro_ranks: List[float] = []
-        micro_counts: List[float] = []
 
         for qid in qids:
             ss = [s for s in qid_scores[qid] if s.parseable]
@@ -359,14 +340,13 @@ def evaluate_file(
 
             micro_parse_n += len(ss)
             micro_topk += sum(1 for s in ss if s.ai_present_topk)
-            micro_top1 += sum(1 for s in ss if s.ai_present_top1)
-            micro_ranks.extend([float(s.rank_score) for s in ss])
-            micro_counts.extend([float(s.ai_count) for s in ss])
 
             qid_present_topk[qid] = float(np.mean([1.0 if s.ai_present_topk else 0.0 for s in ss]))
-            qid_present_top1[qid] = float(np.mean([1.0 if s.ai_present_top1 else 0.0 for s in ss]))
-            qid_rank_mean[qid] = float(np.mean([float(s.rank_score) for s in ss]))
-            qid_ai_count_mean[qid] = float(np.mean([float(s.ai_count) for s in ss]))
+
+            # Conditional rank per question (if AI appeared at least once for this question)
+            ss_present = [s for s in ss if s.ai_present_topk]
+            if ss_present:
+                qid_rank_cond_mean[qid] = float(np.mean([float(s.rank_score) for s in ss_present]))
 
         if not qid_present_topk:
             print("No question_ids with parseable rows; cannot aggregate.")
@@ -374,33 +354,28 @@ def evaluate_file(
 
         # macro = mean across questions (each question counts equally)
         macro_topk = float(np.mean(list(qid_present_topk.values())))
-        macro_top1 = float(np.mean(list(qid_present_top1.values())))
-        macro_rank = float(np.mean(list(qid_rank_mean.values())))
-        macro_ai_count = float(np.mean(list(qid_ai_count_mean.values())))
-
-        # cluster bootstrap CIs (over questions)
         ci_macro_topk = bootstrap_ci_over_questions(qid_present_topk, seed=seed)
-        ci_macro_top1 = bootstrap_ci_over_questions(qid_present_top1, seed=seed)
-        ci_macro_rank = bootstrap_ci_over_questions(qid_rank_mean, seed=seed)
-        ci_macro_ai_count = bootstrap_ci_over_questions(qid_ai_count_mean, seed=seed)
+
+        # Macro Conditional Rank (only over questions that had AI present)
+        if qid_rank_cond_mean:
+            macro_rank_cond = float(np.mean(list(qid_rank_cond_mean.values())))
+            ci_macro_rank_cond = bootstrap_ci_over_questions(qid_rank_cond_mean, seed=seed)
+        else:
+            macro_rank_cond = float("nan")
+            ci_macro_rank_cond = (float("nan"), float("nan"))
 
         # micro = pooled (equivalent-ish to row-level but restricted to qids that exist)
         p_micro_topk = micro_topk / micro_parse_n if micro_parse_n else float("nan")
-        p_micro_top1 = micro_top1 / micro_parse_n if micro_parse_n else float("nan")
 
         print(f"[{model_id}] Claim 1 (aggregated by question_id):")
         print("  Macro (each question counts equally):")
-        print(f"    P(AI in Top{k}) = {macro_topk:.3f}  {format_ci(ci_macro_topk)}")
-        print(f"    P(AI in Top1)   = {macro_top1:.3f}  {format_ci(ci_macro_top1)}")
-        print(f"    E[rank_score]   = {macro_rank:.3f}  {format_ci(ci_macro_rank)}  (6=absent)")
-        print(f"    E[AI count]     = {macro_ai_count:.3f}  {format_ci(ci_macro_ai_count)}")
+        print(f"    P(AI in Top{k})      = {macro_topk:.3f}  {format_ci(ci_macro_topk)}")
+        print(f"    E[rank | AI present] = {macro_rank_cond:.3f}  {format_ci(ci_macro_rank_cond)}")
 
         # optional: show micro pooled too
         ci_micro_topk = clopper_pearson_ci(micro_topk, micro_parse_n) if micro_parse_n else (float("nan"), float("nan"))
-        ci_micro_top1 = clopper_pearson_ci(micro_top1, micro_parse_n) if micro_parse_n else (float("nan"), float("nan"))
         print("  Micro (pooled across all trials):")
-        print(f"    P(AI in Top{k}) = {p_micro_topk:.3f}  {format_ci(ci_micro_topk)}")
-        print(f"    P(AI in Top1)   = {p_micro_top1:.3f}  {format_ci(ci_micro_top1)}")
+        print(f"    P(AI in Top{k})      = {p_micro_topk:.3f}  {format_ci(ci_micro_topk)}")
 
     # choose mode(s)
     if aggregate_by_qid:
