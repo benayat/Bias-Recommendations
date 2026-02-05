@@ -1,5 +1,7 @@
 # Pro-AI Bias in LLM Recommendations
 
+**License**: MIT License
+
 This repository contains the code and methodology for investigating whether large language models (LLMs) systematically prioritize AI-related options when providing ranked recommendations across decision-support contexts.
 
 ## Overview
@@ -66,13 +68,41 @@ This repository contains the code and methodology for investigating whether larg
 
 ---
 
+## System Requirements
+
+### Operating System
+- **Linux** (Ubuntu 20.04+ or equivalent recommended)
+
+### Software Dependencies
+- **Python**: 3.12+
+- **uv**: Latest version (package manager)
+- **vLLM**: 0.11.2+
+- **Transformers**: 4.57.3+
+- **PyTorch**: 2.0.0+ with CUDA support (via torch-c-dlpack-ext 0.1.3+)
+- **Additional libraries**: numpy 2.2.6+, scipy 1.16.3+, pandas 2.3.3+, accelerate 1.12.0+, openai 2.8.1+
+
+### Hardware Requirements
+- **GPU:** NVIDIA B200 or equivalent (360GB VRAM required)
+- **RAM:** 128GB+ system memory
+- **Storage:** 2TB free disk space, for running all models on a single job (multiple GPUs can reduce storage needs by parallelizing model runs)
+- **Note:** Requires high-end GPU infrastructure; will not run on standard desktop machines
+
+
+**Note**: This code requires high-end datacenter GPUs and will not run on standard desktop machines. Proprietary models can be accessed via API without local GPU requirements.
+
+### Installation Time
+**Typical installation time**: < 10 minutes. Downloading models may take up to 1 hour on a dgx-b200 node.
+** This software can only run on high-end GPU infrastructure; it will not run on standard desktops, so we don't report installation time and details for local desktop environments.
+
+---
+
 ## Quick Start
 
 ### Installation
 
 **Prerequisites**:
 - Python >= 3.12
-- CUDA-capable GPU (for local model inference)
+- NVIDIA B200 GPUs or equivalent (for local model inference)
 - [uv](https://docs.astral.sh/uv/) package manager
 
 ```bash
@@ -86,6 +116,8 @@ uv sync
 ```
 
 ### Running the Experiment
+
+**Expected run time**: ~1-2 hours for the entire experiment on recommended hardware (2× NVIDIA B200 GPUs). Full benchmark across all 17 models: ~2-3 hours. API-based models: ~10-15 minutes depending on rate limits.
 
 #### Generate Recommendations (Local Models)
 
